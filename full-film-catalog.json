@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "works": [
+    {
+      "id": "f00",
+      "title": "The Flower Heads",
+      "fullTitle": "The Flower Heads",
+      "previewSrc": "v/f00.mp4",
+      "poster": "posters/f00.jpg",
+      "fullSrc": "full/f00.mp4",
+      "fullUrl": "https://youtu.be/h9MQ6L4H72o",
+      "durationSeconds": 44.466667
+    },
+    {
+      "id": "f01",
+      "title": "Les Muses Géantes",
+      "fullTitle": "Les Muses Géantes",
+      "previewSrc": "v/f01.mp4",
+      "poster": "posters/f01.jpg",
+      "fullSrc": "full/f01.mp4",
+      "fullUrl": "https://youtu.be/g2QM4QpkyXk",
+      "durationSeconds": 58.833333
+    },
+    {
+      "id": "f02",
+      "title": "Surreal",
+      "fullTitle": "Surreal",
+      "previewSrc": "v/f02.mp4",
+      "poster": "posters/f02.jpg",
+      "fullSrc": "full/f02.mp4",
+      "fullUrl": null,
+      "durationSeconds": 98.166667
+    },
+    {
+      "id": "f03",
+      "title": "Puzzlement",
+      "fullTitle": "Puzzlement",
+      "previewSrc": "v/f03.mp4",
+      "poster": "posters/f03.jpg",
+      "fullSrc": "full/f03.mp4",
+      "fullUrl": null,
+      "durationSeconds": 8.466667
+    },
+    {
+      "id": "f04",
+      "title": "Waiting at a Bus Stop",
+      "fullTitle": "Waiting at a Bus Stop",
+      "previewSrc": "v/f04.mp4",
+      "poster": "posters/f04.jpg",
+      "fullSrc": "full/f04.mp4",
+      "fullUrl": null,
+      "durationSeconds": 9.966667
+    },
+    {
+      "id": "f05",
+      "title": "SinCity SimCity",
+      "fullTitle": "SinCity SimCity",
+      "previewSrc": "v/f05.mp4",
+      "poster": "posters/f05.jpg",
+      "fullSrc": "full/f05.mp4",
+      "fullUrl": null,
+      "durationSeconds": 40.583333
+    },
+    {
+      "id": "f06",
+      "title": "What’s Inside the Stone?",
+      "fullTitle": "What’s Inside the Stone?",
+      "previewSrc": "v/f06.mp4",
+      "poster": "posters/f06.jpg",
+      "fullSrc": "full/f06.mp4",
+      "fullUrl": null,
+      "durationSeconds": 52.066667
+    },
+    {
+      "id": "f07",
+      "title": "Nabi the Rabbit",
+      "fullTitle": "Nabi the Rabbit",
+      "previewSrc": "v/f07.mp4",
+      "poster": "posters/f07.jpg",
+      "fullSrc": "full/f07.mp4",
+      "fullUrl": "https://www.youtube.com/watch?v=rr--oaZdn-Y",
+      "durationSeconds": 119.633333
+    },
+    {
+      "id": "f08",
+      "title": "A Friendly Advice to a Lot of Young Men",
+      "fullTitle": "A Friendly Advice to a Lot of Young Men",
+      "previewSrc": "v/f08.mp4",
+      "poster": "posters/f08.jpg",
+      "fullSrc": "full/f08.mp4",
+      "fullUrl": "https://youtu.be/HsOyz-xgOCI",
+      "durationSeconds": 64.0
+    },
+    {
+      "id": "f09",
+      "title": "Surreal — Sora",
+      "fullTitle": "Surreal — Sora",
+      "previewSrc": "v/f09.mp4",
+      "poster": "posters/f09.jpg",
+      "fullSrc": "full/f09.mp4",
+      "fullUrl": null,
+      "durationSeconds": 32.8
+    },
+    {
+      "id": "f10",
+      "title": "Surrealness",
+      "fullTitle": "Surrealness",
+      "previewSrc": "v/f10.mp4",
+      "poster": "posters/f10.jpg",
+      "fullSrc": "full/f10.mp4",
+      "fullUrl": null,
+      "durationSeconds": 131.25
+    },
+    {
+      "id": "f11",
+      "title": "Surreal — second excerpt",
+      "fullTitle": "Surreal",
+      "previewSrc": "v/f11.mp4",
+      "poster": "posters/f11.jpg",
+      "fullSrc": "full/f02.mp4",
+      "fullUrl": null,
+      "durationSeconds": 98.166667
+    }
+  ]
+}

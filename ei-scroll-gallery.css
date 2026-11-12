@@ -1,0 +1,22 @@
+.ei-scroll-gallery{position:relative;width:100%;height:100%;min-height:180px;display:flex;align-items:center;justify-content:center;background:#f3f0e9;color:#17171d}
+.ei-scroll-gallery [hidden]{display:none!important}
+.ei-gallery-viewport{position:relative;flex:none;width:100%;aspect-ratio:16/9;overflow:hidden}
+.ei-gallery-viewport canvas{display:block;width:100%;height:100%}
+.ei-gallery-status{position:absolute;inset:0;display:grid;place-items:center;margin:0;background:#f3f0e9;font:500 14px system-ui,sans-serif;letter-spacing:.08em}
+.ei-gallery-enable{position:absolute;right:20px;bottom:20px;max-width:calc(100% - 40px);border:1px solid #17171d;border-radius:999px;background:#f3f0e9;color:#17171d;padding:10px 18px;font:500 13px system-ui,sans-serif;cursor:pointer}
+.ei-gallery-enable:focus-visible{outline:3px solid #e23d1e;outline-offset:4px}
+.ei-gallery-fallback{box-sizing:border-box;position:absolute;inset:0;overflow:auto;padding:clamp(20px,4vw,56px);background:#f3f0e9;font:16px/1.6 system-ui,sans-serif}
+.ei-gallery-work-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 24px;margin-bottom:32px}
+.ei-gallery-work{display:block;color:inherit;text-decoration:none}
+.ei-gallery-work span{display:block;padding:6px 0}
+.ei-gallery-work:hover span{text-decoration:underline}
+.ei-gallery-art-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:24px}
+.ei-gallery-art-grid img{display:block;max-width:100%;width:100%;aspect-ratio:1;object-fit:contain;background:#e9e6df}
+
+/* Native buttons supplement screen picking; canvas never intercepts native scrolling. */
+.ei-gallery-viewport canvas{touch-action:pan-y pinch-zoom}
+.ei-gallery-watch{position:absolute;right:20px;bottom:70px;max-width:min(440px,calc(100% - 40px));min-height:44px;padding:10px 18px;border:1px solid #17171d;border-radius:999px;background:#f3f0e9;color:#17171d;font:500 13px/1.4 system-ui,sans-serif;text-align:left;cursor:pointer}
+.ei-gallery-watch:focus-visible,.ei-gallery-work-button:focus-visible{outline:3px solid #e23d1e;outline-offset:4px}
+.ei-gallery-watch:disabled{cursor:default;opacity:.6}
+.ei-gallery-work-button{font:inherit;text-align:left;padding:8px 0;background:none;border:0;cursor:pointer}
+@media(max-width:600px){.ei-gallery-watch{right:12px;bottom:64px;max-width:calc(100% - 24px);font-size:12px;padding:8px 12px}}
