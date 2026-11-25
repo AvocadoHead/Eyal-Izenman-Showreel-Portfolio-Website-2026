@@ -160,35 +160,77 @@ function updateDeco(t){deco.visible=t>TB-.5;if(!deco.visible)return;const k=eio(
     dQ.setFromAxisAngle(dA,ang);dS.set(r,r,r);dM.compose(dP,dQ,dS);deco.setMatrixAt(i,dM);}
   deco.instanceMatrix.needsUpdate=true;}
 
-/* ---------- the soundwave field: a carpet of clay marbles riding the music (intro, code chapter, finale ring) ---------- */
-const NX=LITE?120:190,NZ=LITE?44:70,SP=.27*189/(NX-1),N=NX*NZ,MD=SP*.8;
-const barGeo=new THREE.IcosahedronGeometry(.5,LITE?1:2);
-const bars=new THREE.InstancedMesh(barGeo,envm(new THREE.MeshStandardMaterial({roughness:.3,metalness:0}),.95),N);
-bars.castShadow=true;bars.frustumCulled=false;scene.add(bars);
-for(let i=0;i<N;i++)bars.setColorAt(i,PALE);
-const bM=bars.instanceMatrix.array,bC=bars.instanceColor.array;
-const bx=new Float32Array(N),bz=new Float32Array(N),bd=new Float32Array(N),bb=new Float32Array(N),bdel=new Float32Array(N),bfr=new Float32Array(N),brn=new Float32Array(N),bcl=new Float32Array(N),bac=new Uint8Array(N);
-for(let i=0;i<N;i++){const ix=i%NX,iz=(i/NX)|0,c=(NX-1)/2;bx[i]=(ix-c)*SP;bz[i]=(iz-(NZ-1)/2)*SP-3;bd[i]=Math.abs(ix-c)/c;bb[i]=bd[i]*(NBD-1.01);bdel[i]=iz*.024*69/(NZ-1);bac[i]=(ix*5+iz*3)%4;bfr[i]=1-.5*iz/(NZ-1);brn[i]=R();
-  bcl[i]=.12+.88*sat((Math.hypot(bx[i]/1.6,bz[i]+3)-4)/3);}
+/* ---------- the sound-sheet: one continuous surface the music moves through (intro, code chapter, finale ripples) ---------- */
+// The spectrum lives in a small texture (24 bands × 30 rows a second); displacement, shading and dissolve all happen on the GPU.
+const NX=190,NZ=70,SP=.27,N=NX*NZ,HALFW=(NX-1)/2*SP,HALFD=(NZ-1)/2*SP;
+const bx=new Float32Array(N),bz=new Float32Array(N),bd=new Float32Array(N);   // where the birds lift off
+for(let i=0;i<N;i++){const ix=i%NX,iz=(i/NX)|0,c=(NX-1)/2;bx[i]=(ix-c)*SP;bz[i]=(iz-(NZ-1)/2)*SP-3;bd[i]=Math.abs(ix-c)/c;}
+const SNF=Math.floor((NF-1)/2),bandTex=(()=>{const d=new Uint8Array(NBD*SNF);
+  for(let f=0;f<SNF;f++)for(let b=0;b<NBD;b++)d[f*NBD+b]=(BANDS[2*f*NBD+b]+BANDS[(2*f+1)*NBD+b])>>1;
+  const tx=new THREE.DataTexture(d,NBD,SNF,THREE.RedFormat,THREE.UnsignedByteType);tx.magFilter=tx.minFilter=THREE.LinearFilter;tx.unpackAlignment=1;tx.needsUpdate=true;return tx;})();
+const SU={uT:{value:0},uMode:{value:0},uWT:{value:-1},uF:{value:new THREE.Vector2(1e6,1e6)},uBands:{value:bandTex},uSNF:{value:SNF},uNBD:{value:NBD},
+  uLow:{value:PEARL},uMid:{value:SKY},uHigh:{value:ULTRA},uSun:{value:SUN},uBerry:{value:BERRY},uMint:{value:MINT}};
+const SHEET_HEAD=`uniform sampler2D uBands;uniform float uT,uMode,uWT,uSNF,uNBD;uniform vec2 uF;
+varying float vSVis,vSH,vSE,vSB;
+const float HW=${HALFW.toFixed(4)},HD=${HALFD.toFixed(4)},ST1=5.6;
+float ssat(float x){return clamp(x,0.,1.);}
+float seio(float x){x=ssat(x);return x<.5?4.*x*x*x:1.-pow(-2.*x+2.,3.)/2.;}
+float shash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float snoise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(shash(i),shash(i+vec2(1.,0.)),f.x),mix(shash(i+vec2(0.,1.)),shash(i+vec2(1.,1.)),f.x),f.y);}
+float sband(float bf,float t){float f=t*30.;if(t<0.||f>uSNF-2.)return 0.;return texture2D(uBands,vec2((bf+.5)/uNBD,(f+.5)/uSNF)).r;}
+float sheetH(vec2 p,out float vis,out float e){
+  float bd=abs(p.x)/HW,rowf=(p.y+HD)/(2.*HD),n=snoise2(p*.45),rise=1.,sink=1.,h=0.;e=0.;
+  float bcl=.12+.88*ssat((length(vec2(p.x/1.6,p.y))-4.)/3.);
+  if(uMode<.5){rise=seio((uT-bd*1.1)/1.9);sink=1.-seio((uT-(ST1-1.3)-bd*.9-n*.6)/1.7);}
+  else if(uMode<1.5){rise=seio((uT-68.2-bd*.9-n*.3)/1.8);sink=1.-seio((uT-76.6-bd*.8-n*.4)/1.8);}
+  vis=rise*sink;
+  if(uMode<1.5){
+    e=sband(bd*(uNBD-1.01),uT-rowf*1.656);
+    h=(.06+2.7*pow(e,1.9)*(1.-.5*rowf))*vis*(uMode>.5?bcl*.75:1.);
+    h+=.2*vis*(.5+.5*sin(p.x*.21+uT*.7+n*2.2))*(1.-bd*.6);          // a slow ground swell: the sheet is never dead
+    vec2 d=p-uF;h+=1.25*exp(-dot(d,d)/2.4)*vis;                       // it rises to meet the pointer
+  }else{
+    float r=length(p),s=0.;
+    for(int k=0;k<2;k++){float hit=k==0?82.72:85.02,w=k==0?1.:.45,tau=uWT-hit;if(tau>0.){float dd=(r-2.8-tau*4.2)/.55;s+=w*exp(-dd*dd-tau*.55);}}
+    h=.5*s*bcl*exp(-r/11.)*ssat((9.2-r)/2.5);vis=ssat(h/.04);
+  }
+  return h;}
+`;
+const SHEET_VS=`float sVis,sE,sv1,sv2,se1,se2;vec2 sp=position.xz;float sh0=sheetH(sp,sVis,sE);
+  const float SEPS=.2;float shx=sheetH(sp+vec2(SEPS,0.),sv1,se1),shz=sheetH(sp+vec2(0.,SEPS),sv2,se2);
+  float sedge=smoothstep(0.,2.4,HW-abs(sp.x))*smoothstep(0.,1.8,HD-abs(sp.y));
+  vSVis=sVis*sedge;vSH=sh0;vSE=sE;vSB=abs(sp.x)/HW;`;
+const sheetGeo=new THREE.PlaneGeometry(2*HALFW,2*HALFD,LITE?150:280,LITE?56:104);sheetGeo.rotateX(-Math.PI/2);
+const sheetMat=envm(new THREE.MeshStandardMaterial({roughness:.36,metalness:0,transparent:true,vertexColors:true}),.9);
+sheetMat.userData.iri={value:.22};
+sheetMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,SU);
+  sh.vertexShader=SHEET_HEAD+sh.vertexShader.replace('#include <beginnormal_vertex>',SHEET_VS+'vec3 objectNormal=normalize(vec3(sh0-shx,SEPS,sh0-shz));')
+    .replace('#include <begin_vertex>','vec3 transformed=vec3(position.x,sh0,position.z);').replace('#include <color_vertex>','vColor=vec3(1.);');
+  sh.fragmentShader='uniform vec3 uLow,uMid,uHigh,uSun,uBerry,uMint;uniform float uMode;varying float vSVis,vSH,vSE,vSB;\n'+sh.fragmentShader.replace('#include <color_fragment>',
+    `#include <color_fragment>
+     float sk=clamp(vSH/1.5,0.,1.);vec3 sc=mix(uLow,uMid,smoothstep(0.,.55,sk));sc=mix(sc,uHigh,smoothstep(.45,1.,sk));
+     vec3 sacc=mix(uSun,uBerry,smoothstep(.12,.5,vSB));sacc=mix(sacc,uMint,smoothstep(.62,.95,vSB));
+     sc=mix(sc,sacc,.85*smoothstep(.5,.95,vSE)*clamp(vSH/1.1,0.,1.));
+     if(uMode>1.5)sc=mix(uMid,uBerry,clamp(vSH/.22,0.,1.));
+     diffuseColor.rgb=sc;diffuseColor.a*=vSVis;`);
+  iriFrag(sh,sheetMat.userData.iri);};
+sheetMat.customProgramCacheKey=()=>'ei-sheet';
+const sheetDepth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking});
+sheetDepth.onBeforeCompile=sh=>{Object.assign(sh.uniforms,SU);
+  sh.vertexShader=SHEET_HEAD+sh.vertexShader.replace('#include <begin_vertex>','float sVis,sE;float sh0=sheetH(position.xz,sVis,sE);vSVis=sVis;vec3 transformed=vec3(position.x,sh0,position.z);');
+  sh.fragmentShader='varying float vSVis;\n'+sh.fragmentShader.replace('void main() {','void main() {\n  if(vSVis<.4)discard;');};
+sheetDepth.customProgramCacheKey=()=>'ei-sheet-depth';
+const sheet=new THREE.Mesh(sheetGeo,sheetMat);sheet.customDepthMaterial=sheetDepth;sheet.castShadow=true;sheet.receiveShadow=true;sheet.frustumCulled=false;scene.add(sheet);
 
-/* ---------- the flock: 42,000 birds ---------- */
-const NB=LITE?14000:42000,BS=LITE?1.55:1,g=new THREE.BufferGeometry();let NBA=NB;
+/* ---------- the flock: every bird is computed on the GPU; the CPU only lays out where the flock's centres travel ---------- */
+const NB=LITE?14000:42000,BS=LITE?1.55:1;let NBA=NB;
+const g=new THREE.InstancedBufferGeometry();
 {const B=[0,0,0],nose=[0,0,.62],tail=[0,0,-.5],v=[];
   for(const s of[-1,1]){const w=[nose,[s*.36,.07,.24],[s*.72,.16,.08],[s*1,.20,-.30],[s*.62,.10,-.18],tail];
     for(let k=0;k<w.length-1;k++)v.push(...B,...(s<0?w[k]:w[k+1]),...(s<0?w[k+1]:w[k]));}
   g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.computeVertexNormals();}
-const birds=new THREE.InstancedMesh(g,envm(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.5,side:THREE.DoubleSide}),.55),NB);
-birds.castShadow=true;birds.frustumCulled=false;scene.add(birds);
-// Deep ultramarine birds with a few candy ones among them — glitter, never a costume.
-const BASE=new Float32Array(NB*3);
-{const RC=RNG(4242),c=new THREE.Color(),A=C(0x1b358a),B2=C(0x3460cf);
-  for(let i=0;i<NB;i++){const u=RC();if(u<.018)c.copy(CANDY[(RC()*4)|0]);else c.copy(A).lerp(B2,RC()*.85);BASE[i*3]=c.r;BASE[i*3+1]=c.g;BASE[i*3+2]=c.b;birds.setColorAt(i,c);}}
-const pC=birds.instanceColor.array;let tintDirty=false;
-const pM=birds.instanceMatrix.array,F=()=>new Float32Array(NB);
-// Reuse rotation scratch objects and cache each bird's settled orientation.
-const landingQ=new Float32Array(NB*4),birdRot=new THREE.Matrix4(),birdQ=new THREE.Quaternion(),landQ=new THREE.Quaternion(),
-      birdRight=new THREE.Vector3(),birdUp=new THREE.Vector3(),birdForward=new THREE.Vector3();
-const P={d:F(),ox:F(),oy:F(),oz:F(),ph:F(),s:F(),st:F(),ld:F(),ex:F(),ey:F(),ez:F(),sx:F(),sz:F(),lc:F(),ls:F()},grp=new Uint8Array(NB),boxI=new Uint8Array(NB),_q=[0,0,0];
+const F=()=>new Float32Array(NB);
+const P={d:F(),ox:F(),oy:F(),oz:F(),ph:F(),s:F(),st:F(),ld:F(),ex:F(),ey:F(),ez:F(),sx:F(),sz:F(),lc:F(),ls:F()},grp=new Uint8Array(NB),boxI=new Uint8Array(NB);
 const gauss=()=>(R()+R()+R()-1.5)/1.5;
 // Ei as plain bold blocks: E = stem + 3 bars, i = stem + dot, same height
 const EH=5,SW=1.15,X0=-2.575,BOX=[[0,SW,0,EH],[SW,3.3,EH-SW,EH],[SW,2.9,1.925,3.075],[SW,3.3,0,SW],[4,5.15,0,3.35],[4,5.15,EH-SW,EH]];
@@ -197,9 +239,78 @@ for(let i=0;i<NB;i++){const gi=R()<.2?2:(R()<.5?0:1),sc=gi===2?1:.42;grp[i]=gi; 
   P.d[i]=R()*1.2;P.ox[i]=gauss()*6.4*sc;P.oy[i]=gauss()*2.6*sc;P.oz[i]=gauss()*4.2*sc;P.ph[i]=R()*6.283;P.s[i]=.034+R()*.04;
   const j=(R()*N)|0;P.sx[i]=bx[j];P.sz[i]=bz[j];P.st[i]=bd[j]*.9+R()*.9;P.ld[i]=R()*.95;
   let r=R()*atot,k=0;while(r>areas[k]){r-=areas[k];k++;}const b=BOX[k];boxI[i]=k;P.ex[i]=X0+lerp(b[0],b[1],R());P.ey[i]=lerp(b[2],b[3],R());
-  P.ez[i]=R()<.62?.5+R()*.03:(R()-.5);const la=R()*6.283;P.lc[i]=Math.cos(la);P.ls[i]=Math.sin(la);
-  birdRot.makeBasis(birdRight.set(-P.ls[i],P.lc[i],0),birdUp.set(0,0,1),birdForward.set(P.lc[i],P.ls[i],0));
-  landQ.setFromRotationMatrix(birdRot).toArray(landingQ,i*4);}
+  P.ez[i]=R()<.62?.5+R()*.03:(R()-.5);const la=R()*6.283;P.lc[i]=Math.cos(la);P.ls[i]=Math.sin(la);}
+// Per-bird data as five vec4 attributes; colour is deep ultramarine with a few candy birds among them.
+{const A=new Float32Array(NB*4),B=new Float32Array(NB*4),Cc=new Float32Array(NB*4),D=new Float32Array(NB*4),E=new Float32Array(NB*4);
+  const RC=RNG(4242),c=new THREE.Color(),c1=C(0x1b358a),c2=C(0x3460cf);
+  for(let i=0;i<NB;i++){const q=i*4;
+    A[q]=P.d[i];A[q+1]=P.ox[i];A[q+2]=P.oy[i];A[q+3]=P.oz[i];B[q]=P.ph[i];B[q+1]=P.s[i];B[q+2]=P.st[i];B[q+3]=P.ld[i];
+    Cc[q]=P.ex[i];Cc[q+1]=P.ey[i];Cc[q+2]=P.ez[i];Cc[q+3]=grp[i];D[q]=P.sx[i];D[q+1]=P.sz[i];D[q+2]=P.lc[i];D[q+3]=P.ls[i];
+    const u=RC();if(u<.018)c.copy(CANDY[(RC()*4)|0]);else c.copy(c1).lerp(c2,RC()*.85);E[q]=c.r;E[q+1]=c.g;E[q+2]=c.b;E[q+3]=boxI[i];}
+  [['aA',A],['aB',B],['aC',Cc],['aD',D],['aE',E]].forEach(([n,a])=>g.setAttribute(n,new THREE.InstancedBufferAttribute(a,4)));}
+g.instanceCount=NB;
+const BU={uT:{value:0},uBr:{value:1},uTT:{value:0},uTBr:{value:1},uCA:{value:null},uCB:{value:null},uWT:{value:-1},uDOTK:{value:1},uDX:{value:0},uDY:{value:0},
+  uREP:{value:0},uWAKE:{value:1},uBS:{value:BS},uRO:{value:new THREE.Vector3()},uRD:{value:new THREE.Vector3(0,0,-1)},uACC:{value:BERRY}};
+// The same choreography as before (flock → first Ei → bridge arcs → travel → final Ei, finale wave, pointer wake), written for the GPU.
+const BIRD_HEAD=`uniform float uT,uBr,uTT,uTBr,uWT,uDOTK,uDX,uDY,uREP,uWAKE,uBS;uniform vec3 uCA[81],uCB[81],uRO,uRD,uACC;
+attribute vec4 aA,aB,aC,aD,aE;
+const float BT1=5.6,BT2=9.8,BFR=12.,BTB=20.,BTE=77.5,BZE=-335.,BKT=27.,BDK=.08,BX0=-2.575,BPI=3.14159265;
+float bsat(float x){return clamp(x,0.,1.);}
+float beo(float x){x=bsat(x);return 1.-pow(1.-x,3.);}
+float beio(float x){x=bsat(x);return x<.5?4.*x*x*x:1.-pow(-2.*x+2.,3.)/2.;}
+vec3 bflock(float t,float del,float br,bool B){
+  float kf=min(BKT-1.001,del/BDK),k0=floor(kf),kk=kf-k0;int q=int(aC.w*BKT+k0+.5);
+  vec3 c=B?mix(uCB[q],uCB[q+1],kk):mix(uCA[q],uCA[q+1],kk);
+  float tau=t-del,ang=tau*.9+aA.z*.3,ca=cos(ang),sa=sin(ang),w=tau*1.9+aB.x;
+  return vec3(c.x+(aA.y*ca-aA.w*sa)*br+sin(w+aA.z)*.7,max(.3,c.y+aA.z*br+sin(w*.9+aA.y*.8)*.6),c.z+(aA.y*sa+aA.w*ca)*br+cos(w+aA.w)*.7);}
+vec3 bbridge(float t){float a=aB.x+(t-BFR)*.28,r=7.2+aA.y*.18;return vec3(sin(a)*r,7.+1.15*sin(2.*a)+aA.z*.14,-8.5+2.8*cos(a)+aA.w*.12);}
+vec3 bpos(float t,float br,bool B,out float A,out float L){
+  vec3 p=vec3(0.);float a=1.;L=0.;
+  if(t<BTB+3.6){
+    float b=beio((t-BT2-aB.w*.35)/1.3);
+    if(b<1.){p=bflock(t,aA.x,br,B);
+      a=beio((t-(BT1-1.2)-aB.z)/2.2);
+      if(a<1.){p.x=mix(aD.x,p.x,a);p.z=mix(aD.y,p.z,a);p.y=mix(.2,p.y,a)+sin(BPI*a)*1.8;}
+      if(b>0.){p.x=mix(p.x,aC.x,b);p.y=mix(p.y,aC.y,b);p.z=mix(p.z,aC.z,b)+sin(BPI*b)*1.2;}}
+    else p=aC.xyz;
+    L=b;
+    float rel=beio((t-BFR-aB.w*.35)/1.55);
+    if(rel>0.){p=mix(p,bbridge(t),rel);L*=1.-rel;}}
+  if(t>BTB){float c=beio((t-BTB-.15-aB.w*1.3)/2.2);
+    if(c>0.){vec3 f=bflock(t,aA.x*1.6,br,B);
+      if(c<1.){p.x=mix(p.x,f.x,c);p.y=mix(p.y,f.y,c)+sin(BPI*c)*1.5;p.z=mix(p.z,f.z,c);}else p=f;
+      L*=1.-c;
+      if(t>BTE){float e=beio((t-BTE-aB.w*1.2)/2.4);p.x=mix(p.x,aC.x,e);p.y=mix(p.y,aC.y,e);p.z=mix(p.z,aC.z+BZE,e)+sin(BPI*e)*1.2;L=e;}}}
+  A=a;return p;}
+`;
+const BIRD_MAIN=`float bA,bL,bA2,bL2;vec3 bp=bpos(uT,uBr,false,bA,bL);float bb=bL;
+  vec3 bf,brt,bu,lf=vec3(aD.z,aD.w,0.),lr=vec3(-aD.w,aD.z,0.),lu=vec3(0.,0.,1.);
+  if(bb>=1.){bf=lf;brt=lr;bu=lu;}
+  else{vec3 bq=bpos(uTT,uTBr,true,bA2,bL2),f=bp-bq;float fl=length(f);f=fl<1e-5?vec3(0.,0.,1.):f/fl;
+    vec3 r=vec3(f.z,0.,-f.x);float rl=length(r);if(rl<1e-4){r=vec3(1.-f.x*f.x,-f.x*f.y,-f.x*f.z);rl=max(length(r),1e-4);}r/=rl;vec3 u=cross(f,r);
+    if(bb>0.){bf=normalize(mix(f,lf,bb));brt=normalize(mix(r,lr,bb));bu=normalize(mix(u,lu,bb));}else{bf=f;brt=r;bu=u;}}
+  float bs=aB.y*uBS*beo(bA*2.5),wp=uT*(10.5+1.8*sin(aB.x*1.7))+aB.x+.18*sin(uT*.65+aB.x),flap=mix(.88+.12*sin(wp),.72+.04*sin(uT*1.6+aB.x),bb);
+  vec3 bCol=aE.rgb;float hy=0.,hz=0.;
+  if(uT>BTE){float sv=(aC.x-BX0)/5.15+aC.y*.035,fsal=0.,hop=0.;
+    for(int k=0;k<2;k++){float hit=k==0?82.72:85.02,wgt=k==0?1.:.45,u=bsat((uWT-hit-sv*1.7)/.95),sn=sin(BPI*u),bell=sn*sn*wgt;fsal=max(fsal,bell);hop+=bell;}
+    float m=max(.34*fsal,aE.w>4.5?uDOTK:0.)*bb;hy=.06*hop*bb;hz=(.4+.45*aB.w)*hop*bb;bCol=mix(aE.rgb,uACC,m);}
+  vec3 bw=bp+vec3(0.,hy,hz);
+  if(uT>BTE&&aE.w>4.5)bw.xy+=vec2(uDX,uDY)*bb;                 // the dot of the i belongs to whoever is watching
+  else if(uREP>.01){vec3 v=bw-uRO;float sd=dot(v,uRD);          // the flock parts around the pointer
+    if(sd>1.){vec3 ev=v-uRD*sd;float d2=dot(ev,ev),rr=.085*sd*uWAKE;if(d2<rr*rr){float d=sqrt(d2)+1e-4,k=1.-d/rr;bw+=ev*(uREP*k*k*rr*1.15/d);}}}
+  if(bA<=0.){bs=0.;bw=vec3(0.,-5.,0.);}
+  vec3 bP=bw+(brt*position.x+bu*position.y*flap+bf*position.z)*bs;
+  vec3 bN=normalize(brt*normal.x+bu*normal.y/max(flap,.1)+bf*normal.z);`;
+const birdMat=envm(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.5,side:THREE.DoubleSide,vertexColors:true}),.55);
+birdMat.userData.iri={value:.12};
+birdMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,BU);
+  sh.vertexShader=BIRD_HEAD+sh.vertexShader.replace('#include <color_vertex>','').replace('#include <beginnormal_vertex>',BIRD_MAIN+'vec3 objectNormal=bN;vColor=bCol;').replace('#include <begin_vertex>','vec3 transformed=bP;');
+  iriFrag(sh,birdMat.userData.iri);};
+birdMat.customProgramCacheKey=()=>'ei-birds';
+const birdDepth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,side:THREE.DoubleSide});
+birdDepth.onBeforeCompile=sh=>{Object.assign(sh.uniforms,BU);sh.vertexShader=BIRD_HEAD+sh.vertexShader.replace('#include <begin_vertex>',BIRD_MAIN+'vec3 transformed=bP;');};
+birdDepth.customProgramCacheKey=()=>'ei-birds-depth';
+const birds=new THREE.Mesh(g,birdMat);birds.customDepthMaterial=birdDepth;birds.castShadow=true;birds.frustumCulled=false;scene.add(birds);
 
 /* ---------- camera path for the body (Catmull-Rom through keys: t, pos, look) ---------- */
 const KEYS=[[15,-3,2.4,14, 0,1.6,0],[17.5,0,2.6,2, 0,2.6,-20],[19,0,2.6,-10, 0,2.6,-38],[23,.9,2.6,-34, 0,2.6,-60],[27,-.9,2.6,-58, 0,2.6,-84],[31,.9,2.6,-82, 0,2.6,-108],
@@ -212,7 +323,7 @@ function camAt(t,o){let i=0;while(i<KEYS.length-2&&t>=KEYS[i+1][0])i++;const a=K
   for(let k=0;k<6;k++){const p0=a[k+1],p1=b[k+1],p2=c[k+1],p3=d[k+1];o[k]=.5*((2*p1)+(-p0+p2)*u+(2*p0-5*p1+4*p2-p3)*u2+(-p0+3*p1-3*p2+p3)*u3);}}
 
 /* ---------- flock choreography: a centre that travels, two cores that dance around each other ---------- */
-const KT=27,DK=.08,ctabA=new Float32Array(3*KT*3),ctabB=new Float32Array(3*KT*3);let ctab=ctabA;
+const KT=27,DK=.08,ctabA=new Float32Array(3*KT*3),ctabB=new Float32Array(3*KT*3);BU.uCA.value=ctabA;BU.uCB.value=ctabB;
 function introCenter(tau,o){o[0]=9.5*Math.sin(.85*tau+.2);o[1]=5.8+2.2*Math.sin(1.55*tau+.8);o[2]=-2+5*Math.sin(1.1*tau+2);}
 const _c=[0,0,0];
 function fillCenters(t,body,ctab){
@@ -222,41 +333,7 @@ function fillCenters(t,body,ctab){
     const rad=3.4+1.3*Math.sin(.7*s),dx=Math.cos(1.25*s)*rad,dy=Math.sin(2.1*s)*1.3,dz=Math.sin(1.25*s)*rad*.8;
     for(let gi=0;gi<3;gi++){const sg=gi===0?1:gi===1?-1:0,q=(gi*KT+k)*3;ctab[q]=_c[0]+sg*dx;ctab[q+1]=_c[1]+sg*dy;ctab[q+2]=_c[2]+sg*dz;}}
 }
-const _p=[0,0,0];let _b=0;
-// The released signature peels into two flowing arcs above the geometric passage.
-function bridgeBirdXYZ(i,t,o){
-  const a=P.ph[i]+(t-FIRST_RELEASE)*.28,r=7.2+P.ox[i]*.18;
-  o[0]=Math.sin(a)*r;o[1]=7.0+1.15*Math.sin(2*a)+P.oy[i]*.14;
-  o[2]=-8.5+2.8*Math.cos(a)+P.oz[i]*.12;
-}
-function flockXYZ(i,t,del,br,o){ // position of bird i inside the travelling flock
-  const kf=Math.min(KT-1.001,del/DK),k0=kf|0,kk=kf-k0,q=(grp[i]*KT+k0)*3,tau=t-del;
-  const cx=lerp(ctab[q],ctab[q+3],kk),cy=lerp(ctab[q+1],ctab[q+4],kk),cz=lerp(ctab[q+2],ctab[q+5],kk);
-  const ang=tau*.9+P.oy[i]*.3,ca=Math.cos(ang),sa=Math.sin(ang),w=tau*1.9+P.ph[i];
-  o[0]=cx+(P.ox[i]*ca-P.oz[i]*sa)*br+Math.sin(w+P.oy[i])*.7;
-  o[1]=Math.max(.3,cy+P.oy[i]*br+Math.sin(w*.9+P.ox[i]*.8)*.6);
-  o[2]=cz+(P.ox[i]*sa+P.oz[i]*ca)*br+Math.cos(w+P.oz[i])*.7;}
-function birdPos(i,t,br,o){
-  let x,y,z,a=1,L=0;
-  if(t<TB+3.6){ // intro: lift off the wave, fly, land into Ei
-    const b=eio((t-T2-P.ld[i]*.35)/1.3);
-    if(b<1){flockXYZ(i,t,P.d[i],br,o);x=o[0];y=o[1];z=o[2];
-      a=eio((t-(T1-1.2)-P.st[i])/2.2);
-      if(a<1){x=lerp(P.sx[i],x,a);z=lerp(P.sz[i],z,a);y=lerp(.2,y,a)+Math.sin(Math.PI*a)*1.8;}
-      if(b>0){x=lerp(x,P.ex[i],b);y=lerp(y,P.ey[i],b);z=lerp(z,P.ez[i],b)+Math.sin(Math.PI*b)*1.2;}}
-    else{x=P.ex[i];y=P.ey[i];z=P.ez[i];}
-    L=b;
-    const release=eio((t-FIRST_RELEASE-P.ld[i]*.35)/1.55);
-    if(release>0){bridgeBirdXYZ(i,t,o);x=lerp(x,o[0],release);y=lerp(y,o[1],release);z=lerp(z,o[2],release);L*=1-release;}
-  }
-  if(t>TB){ // body: leave Ei, travel ahead of the camera, land as Ei again
-    const c=eio((t-TB-.15-P.ld[i]*1.3)/2.2);
-    if(c>0){flockXYZ(i,t,P.d[i]*1.6,br,o);
-      if(c<1){x=lerp(x,o[0],c);y=lerp(y,o[1],c)+Math.sin(Math.PI*c)*1.5;z=lerp(z,o[2],c);}else{x=o[0];y=o[1];z=o[2];}
-      L*=1-c;
-      if(t>TE){const e=eio((t-TE-P.ld[i]*1.2)/2.4);x=lerp(x,P.ex[i],e);y=lerp(y,P.ey[i],e);z=lerp(z,P.ez[i]+ZE,e)+Math.sin(Math.PI*e)*1.2;L=e;}}}
-  o[0]=x;o[1]=y;o[2]=z;_b=L;return a;
-}
+// (bird positions are computed in BIRD_HEAD / BIRD_MAIN on the GPU)
 
 /* ---------- media: standing screens and framed pictures ---------- */
 const vids=[],stands=[],LIPS=[],TL=new THREE.TextureLoader(),CLAY=new THREE.MeshStandardMaterial({color:0xf3f5fa,roughness:.52}),LIPC=[SUN,BERRY,MINT,SKY,ULTRA];let lipN=0;
@@ -372,32 +449,47 @@ function buildMedia(){
     const tx=new THREE.CanvasTexture(c);tx.colorSpace=THREE.SRGBColorSpace;const G=stand(5.9,3.7,tx,'The 3D Book · Simpler · Larynx');G.position.set(3.4,0,ZC-3);G.rotation.y=-.25;}
 }
 
-/* ---------- tile-to-isometric motion passage, adapted from the supplied AE opening ---------- */
-const motionCount=77,motionGeo=roundedCube(),
-      motionField=new THREE.InstancedMesh(motionGeo,envm(new THREE.MeshStandardMaterial({roughness:.42,metalness:0}),.7),motionCount);
-motionField.frustumCulled=false;motionField.castShadow=true;motionField.receiveShadow=true;scene.add(motionField);
-const motionMatrix=new THREE.Matrix4(),motionQ=new THREE.Quaternion(),motionEuler=new THREE.Euler(),
-      motionPos=new THREE.Vector3(),motionScale=new THREE.Vector3(),motionColor=new THREE.Color(),
-      motionCream=C(0xf1f3f8),motionBlue=ULTRA;
-for(let i=0;i<motionCount;i++)motionField.setColorAt(i,motionCream);
+/* ---------- the motion passage: soft amorphous forms that breathe with the music ---------- */
+const NOISE3=`vec3 m289(vec3 x){return x-floor(x*(1./289.))*289.;}vec4 m289(vec4 x){return x-floor(x*(1./289.))*289.;}
+vec4 nperm(vec4 x){return m289(((x*34.)+1.)*x);}vec4 ntis(vec4 r){return 1.79284291400159-.85373472095314*r;}
+float snoise(vec3 v){const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);
+  vec3 i=floor(v+dot(v,C.yyy)),x0=v-i+dot(i,C.xxx),g=step(x0.yzx,x0.xyz),l=1.-g,i1=min(g.xyz,l.zxy),i2=max(g.xyz,l.zxy),x1=x0-i1+C.xxx,x2=x0-i2+C.yyy,x3=x0-D.yyy;i=m289(i);
+  vec4 p=nperm(nperm(nperm(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+  vec3 ns=.142857142857*D.wyz-D.xzx;vec4 j=p-49.*floor(p*ns.z*ns.z),x_=floor(j*ns.z),y_=floor(j-7.*x_),x=x_*ns.x+ns.yyyy,y=y_*ns.x+ns.yyyy,h=1.-abs(x)-abs(y),
+  b0=vec4(x.xy,y.xy),b1=vec4(x.zw,y.zw),s0=floor(b0)*2.+1.,s1=floor(b1)*2.+1.,sh=-step(h,vec4(0.)),a0=b0.xzyw+s0.xzyw*sh.xxyy,a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x),p1=vec3(a0.zw,h.y),p2=vec3(a1.xy,h.z),p3=vec3(a1.zw,h.w);vec4 nm=ntis(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;
+  return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));}
+`;
+const BLOB_HEAD=NOISE3+`uniform float uBT,uSeed,uAmp,uPul;uniform vec3 uGA,uGB;
+float bdisp(vec3 n){return uAmp*(1.+.55*uPul)*(.84*snoise(n*.72+vec3(uSeed,uBT*.21,uSeed*.7))+.16*snoise(n*1.35+vec3(-uBT*.27,uSeed,1.7)));} // broad, slow swells: liquid, not lumpy
+`;
+const BLOB_NORMAL=`vec3 bn=normalize(position),bt1=normalize(cross(bn,abs(bn.y)<.99?vec3(0.,1.,0.):vec3(1.,0.,0.))),bt2=cross(bn,bt1);const float BE=.02;
+  vec3 bn1=normalize(bn+bt1*BE),bn2=normalize(bn+bt2*BE),q0=bn*(1.+bdisp(bn)),q1=bn1*(1.+bdisp(bn1)),q2=bn2*(1.+bdisp(bn2));
+  vec3 objectNormal=normalize(cross(q1-q0,q2-q0));`;
+const blobGeo=new THREE.SphereGeometry(1,LITE?72:150,LITE?54:110),BLOBS=[];
+// [x,y,z,radius,colour A,colour B,seed,arrival delay]
+[[-3.6,3.7,-1.7,1.05,SUN,BERRY,1.3,.0],[-1.5,2.35,-.5,.72,SKY,ULTRA,4.1,.25],[.35,3.85,-2.1,1.4,BERRY,SUN,7.7,.1],[2.25,2.55,-.7,.86,MINT,SKY,2.9,.35],
+ [3.9,3.85,-1.8,.95,PEARL,SKY,5.6,.18],[-.55,1.6,.25,.52,SUN,MINT,8.8,.5],[3.0,5.2,-2.7,.58,ULTRA,BERRY,3.3,.42]].forEach(d=>{
+  const U={uBT:{value:0},uSeed:{value:d[6]},uAmp:{value:.2},uPul:{value:0},uGA:{value:d[4]},uGB:{value:d[5]}};
+  const m=envm(new THREE.MeshStandardMaterial({roughness:.22,metalness:0,vertexColors:true}),1.1);m.userData.iri={value:.3};
+  m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U);
+    sh.vertexShader=BLOB_HEAD+sh.vertexShader.replace('#include <color_vertex>','').replace('#include <beginnormal_vertex>',BLOB_NORMAL+'vColor=mix(uGA,uGB,smoothstep(-.75,.9,objectNormal.y*.8+objectNormal.x*.35));').replace('#include <begin_vertex>','vec3 transformed=q0;');
+    iriFrag(sh,m.userData.iri);};
+  m.customProgramCacheKey=()=>'ei-blob';
+  const dm=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking});
+  dm.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U);sh.vertexShader=BLOB_HEAD+sh.vertexShader.replace('#include <begin_vertex>','vec3 bn=normalize(position);vec3 transformed=bn*(1.+bdisp(bn));');};
+  dm.customProgramCacheKey=()=>'ei-blob-depth';
+  const mesh=new THREE.Mesh(blobGeo,m);mesh.customDepthMaterial=dm;mesh.castShadow=true;mesh.visible=false;mesh.userData={d,U};scene.add(mesh);BLOBS.push(mesh);});
 function updateMotion(t){
-  motionField.visible=t>12.15&&t<21;
-  if(!motionField.visible)return;
-  const u=t-12.15,iso=eio((t-14.1)/2.1),mus=pulse(t);
-  for(let i=0;i<motionCount;i++){
-    const col=i%11-5,row=Math.floor(i/11)-3,rad=Math.hypot(col/5,row/3),delay=rad*.48;
-    const arrive=eio((u-delay)/1.15),leave=eio((t-18.25-rad*.24)/2.0);
-    const wave=.5+.5*Math.sin(u*1.15-rad*3.6),turn=eio((u-1.3-rad*.7)/1.8)*Math.PI/2;
-    motionPos.set(col*.77*(1+2.1*leave),3.15+row*.77+Math.sin(u*.7+col*.4)*.10*arrive+row*.28*leave,
-      -1.4+(.18+.42*wave+.10*mus)*arrive-18*leave-(1-arrive)*5);
-    motionEuler.set(-.58*iso,.76*iso+Math.sin(u*.45+row*.3)*.045,((i%3)-1)*turn*(1-iso)*.22);
-    motionQ.setFromEuler(motionEuler);const visibility=arrive*(1-leave);
-    motionScale.set(.64*visibility,.64*visibility,(.10+.54*iso)*visibility);
-    motionMatrix.compose(motionPos,motionQ,motionScale);motionField.setMatrixAt(i,motionMatrix);
-    const accent=(i*37)%11<2?[SUN,BERRY,MINT,SKY,motionBlue][(i*7)%5]:motionCream;
-    motionColor.copy(accent).lerp(ULTRA,(.03+.07*wave)*iso);motionField.setColorAt(i,motionColor);
-  }
-  motionField.instanceMatrix.needsUpdate=true;motionField.instanceColor.needsUpdate=true;
+  const on=t>12.15&&t<21,mus=pulse(t),orbit=.11*(t-12.15);
+  for(const b of BLOBS){b.visible=on;if(!on)continue;const d=b.userData.d,U=b.userData.U;
+    const arrive=eo((t-12.3-d[7])/1.5),leave=eio((t-18.2-d[7]*.6)/1.8),k=arrive*(1-leave);
+    if(k<=.001){b.visible=false;continue;}
+    const cx=d[0]*1.12,cz=d[2]+1.4,ca=Math.cos(orbit),sa=Math.sin(orbit);
+    b.position.set(cx*ca-cz*sa*.4+.35*Math.sin(t*.5+d[6]),d[1]+.28*Math.sin(t*.8+d[6]*1.3)+.18*mus-1.6*(1-arrive)+3.5*leave,-1.4+cz*ca+cx*sa*.25-11*leave);
+    b.scale.setScalar(d[3]*1.12*(k+.12*Math.sin(Math.PI*arrive)*(1-leave)));   // a soft overshoot as each one arrives
+    U.uBT.value=t;U.uPul.value=mus;U.uAmp.value=.26+.07*Math.sin(t*.45+d[6]);}
 }
 
 /* ---------- site state read by update(): wave clock, the wandering dot, pointer ray, night ---------- */
@@ -408,67 +500,25 @@ const IRI={value:0};
 function iri(m,str){m.userData.iri={value:str};m.onBeforeCompile=sh=>{sh.uniforms.uIri=IRI;sh.uniforms.uIriS=m.userData.iri;
   sh.fragmentShader='uniform float uIri;uniform float uIriS;\n'+sh.fragmentShader.replace('#include <opaque_fragment>',
     'float fI=1.-abs(dot(normalize(normal),normalize(vViewPosition)));outgoingLight+=(.5+.5*cos(6.2832*(fI*1.5+uIri+vec3(0.,.33,.67))))*pow(fI,1.6)*uIriS;\n#include <opaque_fragment>');};}
-iri(birds.material,.12);iri(bars.material,.2);iri(motionField.material,.35);iri(deco.material,.25);
+iri(deco.material,.25);
+function iriFrag(sh,str){sh.uniforms.uIri=IRI;sh.uniforms.uIriS=str;
+  sh.fragmentShader='uniform float uIri;uniform float uIriS;\n'+sh.fragmentShader.replace('#include <opaque_fragment>',
+    'float fI=1.-abs(dot(normalize(normal),normalize(vViewPosition)));outgoingLight+=(.5+.5*cos(6.2832*(fI*1.5+uIri+vec3(0.,.33,.67))))*pow(fI,1.6)*uIriS;\n#include <opaque_fragment>');}
 
 
 /* ---------- frame ---------- */
 let lastT=-9,chapI=-2;
 function update(t){
   const kk=kick(t),br=1+.10*pulse(t-.05),body=t>=TB;
-  /* soundwave bars */
-  const code=t>62.6+INTRO_EXTENSION&&t<75+INTRO_EXTENSION,introB=t<T1+2.2,finB=WT>HIT-.05&&t>TE;bars.visible=introB||code||finB;
-  if(bars.visible){const zo=code?ZC+3:finB?ZE+3:0;
-    for(let i=0;i<N;i++){const o=i*16;let rise,sink,h=0,e=0;
-      if(finB){rise=sink=0;}else if(code){rise=eio((t-(63.2+INTRO_EXTENSION)-bd[i]*.9)/1.8);sink=1-eio((t-(71.6+INTRO_EXTENSION)-bd[i]*.8)/1.8);}
-      else{rise=eio((t-bd[i]*1.1)/1.9);sink=1-eio((t-(T1-1.3)-bd[i]*.9-brn[i]*.5)/1.7);}
-      if(sink>0&&rise>0){e=band(bb[i],t-bdel[i]);h=(.05+3.6*Math.pow(e,2.3)*bfr[i])*rise*sink*(code?bcl[i]*.75:1);const fx=bx[i]-FX,fz=bz[i]+zo-FZ;h+=1.2*Math.exp(-(fx*fx+fz*fz)/1.5)*rise*sink;}
-      let w=h>0?MD*Math.min(1,sink*3)*Math.min(1,rise*2.5):0;
-      if(finB){const r=Math.hypot(bx[i],bz[i]+3);let s=0; // rings of sound roll out from the signature
-        for(let n=0;n<HITS.length;n++){const tau=WT-HITS[n][0];if(tau>0){const d=(r-2.8-tau*4.2)/.55;s+=HITS[n][1]*Math.exp(-d*d-tau*.55);}}
-        h=.5*s*bcl[i]*Math.exp(-r/11)*sat((9.2-r)/2.5);w=MD*sat(h/.05);}
-      bM[o]=w;bM[o+5]=w;bM[o+10]=w;bM[o+12]=bx[i];bM[o+13]=w*.5+h*.92;bM[o+14]=bz[i]+zo;bM[o+15]=1;
-      const k=sat(h/1.7),ac=finB?sat(h/.3):sat((e-.94)/.06)*sat(h/1.6),c=i*3;
-      const cd=CANDY[bac[i]];bC[c]=lerp(lerp(PALE.r,ULTRA.r,k),cd.r,ac);bC[c+1]=lerp(lerp(PALE.g,ULTRA.g,k),cd.g,ac);bC[c+2]=lerp(lerp(PALE.b,ULTRA.b,k),cd.b,ac);}
-    bars.instanceMatrix.needsUpdate=true;bars.instanceColor.needsUpdate=true;}
-  /* birds */
+  /* sound-sheet: the CPU only says which act it is in and where the pointer is */
+  const code=t>62.6+INTRO_EXTENSION&&t<75+INTRO_EXTENSION,introB=t<T1+2.2,finB=WT>HIT-.05&&t>TE;sheet.visible=introB||code||finB;
+  if(sheet.visible){const zo=code?ZC+3:finB?ZE+3:0;sheet.position.z=-3+zo;SU.uT.value=t;SU.uMode.value=finB?2:code?1:0;SU.uWT.value=WT;SU.uF.value.set(FX,FZ-zo+3);}
+  /* birds: the CPU lays out the flock centres, the GPU places every bird */
   birds.visible=t>T1-1.3;
-  if(birds.visible){
-    // A fixed tangent sample makes playback and repeated seeks agree at every frame rate.
-    const tangentT=t-1/30,tangentBr=1+.10*pulse(tangentT-.05);
-    // Two centre tables; the tangent sample is only computed for birds that are actually flying (not hidden, not landed).
-    fillCenters(tangentT,tangentT>=TB,ctabB);fillCenters(t,body,ctabA);const fin=t>TE;
-    for(let i=0;i<NBA;i++){const o=i*16;ctab=ctabA;const a=birdPos(i,t,br,_p),b=_b;
-      if(a<=0){pM.fill(0,o,o+16);pM[o+13]=-5;pM[o+15]=1;continue;}
-      let fx,fy,fz,rx,ry,rz,ux,uy,uz;
-      if(b>=1){const lc=P.lc[i],ls=P.ls[i];fx=lc;fy=ls;fz=0;rx=-ls;ry=lc;rz=0;ux=0;uy=0;uz=1;}
-      else{
-        ctab=ctabB;birdPos(i,tangentT,tangentBr,_q);fx=_p[0]-_q[0];fy=_p[1]-_q[1];fz=_p[2]-_q[2];
-        let fl=Math.hypot(fx,fy,fz);if(fl<1e-5){fx=0;fy=0;fz=1;fl=1;}fx/=fl;fy/=fl;fz/=fl;
-        rx=fz;ry=0;rz=-fx;let rl=Math.hypot(rx,rz);
-        if(rl<1e-4){rx=1-fx*fx;ry=-fx*fy;rz=-fx*fz;rl=Math.hypot(rx,ry,rz);}rx/=rl;ry/=rl;rz/=rl;
-        ux=fy*rz-fz*ry;uy=fz*rx-fx*rz;uz=fx*ry-fy*rx;
-        if(b>0){
-          birdRot.makeBasis(birdRight.set(rx,ry,rz),birdUp.set(ux,uy,uz),birdForward.set(fx,fy,fz));
-          birdQ.setFromRotationMatrix(birdRot);landQ.fromArray(landingQ,i*4).normalize();birdQ.slerp(landQ,b);
-          birdRot.makeRotationFromQuaternion(birdQ);const e=birdRot.elements;
-          rx=e[0];ry=e[1];rz=e[2];ux=e[4];uy=e[5];uz=e[6];fx=e[8];fy=e[9];fz=e[10];
-        }
-      }
-      const s=P.s[i]*BS*eo(a*2.5),wingPhase=t*(10.5+1.8*Math.sin(P.ph[i]*1.7))+P.ph[i]+.18*Math.sin(t*.65+P.ph[i]),
-            flap=lerp(.88+.12*Math.sin(wingPhase),.72+.04*Math.sin(t*1.6+P.ph[i]),b);
-      pM[o]=rx*s;pM[o+1]=ry*s;pM[o+2]=rz*s;pM[o+4]=ux*s*flap;pM[o+5]=uy*s*flap;pM[o+6]=uz*s*flap;pM[o+8]=fx*s;pM[o+9]=fy*s;pM[o+10]=fz*s;
-      let hy=0,hz=0;
-      if(fin){const m=Math.max(.34*salute(WT,(P.ex[i]-X0)/5.15+P.ey[i]*.035),boxI[i]===5?DOTK:0)*b,c=i*3;hy=.06*_hop*b;hz=(.4+.45*P.ld[i])*_hop*b;
-        pC[c]=lerp(BASE[c],ACC.r,m);pC[c+1]=lerp(BASE[c+1],ACC.g,m);pC[c+2]=lerp(BASE[c+2],ACC.b,m);}
-      let qx=_p[0],qy=_p[1]+hy,qz=_p[2]+hz;
-      if(fin&&boxI[i]===5){qx+=DX*b;qy+=DY*b;}        // the dot of the i belongs to whoever is watching
-      else if(REP>.01){const vx=qx-RO.x,vy=qy-RO.y,vz=qz-RO.z,sd=vx*RD.x+vy*RD.y+vz*RD.z; // the flock parts around the pointer
-        if(sd>1){const ex=vx-RD.x*sd,ey=vy-RD.y*sd,ez=vz-RD.z*sd,d2=ex*ex+ey*ey+ez*ez,rr=.085*sd*WAKE;
-          if(d2<rr*rr){const d=Math.sqrt(d2)+1e-4,k=1-d/rr,f=REP*k*k*rr*1.15/d;qx+=ex*f;qy+=ey*f;qz+=ez*f;}}}
-      pM[o+12]=qx;pM[o+13]=qy;pM[o+14]=qz;pM[o+15]=1;}
-    if(!fin&&tintDirty)pC.set(BASE);
-    if(fin||tintDirty){birds.instanceColor.needsUpdate=true;tintDirty=fin;}
-    birds.instanceMatrix.needsUpdate=true;}
+  if(birds.visible){const tangentT=t-1/30;   // a fixed tangent sample keeps playback and seeking identical at any frame rate
+    fillCenters(tangentT,tangentT>=TB,ctabB);fillCenters(t,body,ctabA);
+    BU.uT.value=t;BU.uBr.value=br;BU.uTT.value=tangentT;BU.uTBr.value=1+.10*pulse(tangentT-.05);BU.uWT.value=WT;BU.uDOTK.value=DOTK;
+    BU.uDX.value=DX;BU.uDY.value=DY;BU.uREP.value=REP;BU.uWAKE.value=WAKE;BU.uRO.value.copy(RO);BU.uRD.value.copy(RD);}
   lastT=t;updateMotion(t);
   /* camera */
   const k1=sat(t/(T1+1.4)),e1=eio(k1),a1x=lerp(-12,10,e1),a1y=lerp(1.9,6.3,e1),a1z=lerp(13.5,17.5,e1);
@@ -629,12 +679,13 @@ function syncVideos(){const open=lb.classList.contains('on'),reach=LITE?46:92;
   for(const G of stands){const v=G.userData.media;if(!(v instanceof HTMLVideoElement))continue;
     const want=!open&&!document.hidden&&G.visible&&Math.hypot(G.position.x-cam.position.x,G.position.z-cam.position.z)<reach;
     if(want&&v.paused)v.play().catch(()=>{});else if(!want&&!v.paused)v.pause();}}
-function adapt(dt,now){perfAcc+=dt;perfN++;if(perfN<40)return;const avg=perfAcc/perfN;perfAcc=0;perfN=0;
+const ADAPT=!new URLSearchParams(location.search).has('fixed'); // ?fixed holds quality steady (for review captures)
+function adapt(dt,now){if(!ADAPT)return;perfAcc+=dt;perfN++;if(perfN<40)return;const avg=perfAcc/perfN;perfAcc=0;perfN=0;
   if(now-bootT<2500||document.hidden)return;
   if(avg>1/36){perfGood=0; // too slow: resolution first, then bird shadows, then fewer birds
     if(PR>PRMIN+.01){PR=Math.max(PRMIN,PR*.82);renderer.setPixelRatio(PR);resize();}
     else if(birds.castShadow)birds.castShadow=false;
-    else if(NBA>NB*.45){NBA=Math.round(NBA*.75);birds.count=NBA;}}
+    else if(NBA>NB*.45){NBA=Math.round(NBA*.75);birds.geometry.instanceCount=NBA;}}
   else if(avg<1/54&&++perfGood>=5&&PR<DPR0){PR=Math.min(DPR0,PR*1.1);renderer.setPixelRatio(PR);resize();perfGood=0;}}
 function frame(){requestAnimationFrame(frame);
   const now=performance.now(),dt=Math.min(.25,(now-lastF)/1000),K=r=>1-Math.exp(-dt*r),r=stage.getBoundingClientRect(),u=r.width/100;lastF=now;adapt(dt,now);
